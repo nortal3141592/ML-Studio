@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from datetime import datetime
+from typing import Any
 
 class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=50)
@@ -54,3 +55,8 @@ class MetadataResponse(BaseModel):
     dtypes: dict[str, str]
     missing_values: dict[str, int]
     memory_bytes: int
+
+class PreviewRowsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rows: list[dict[str, Any]]
