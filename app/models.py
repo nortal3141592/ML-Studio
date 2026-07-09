@@ -1,3 +1,4 @@
+from typing import Any
 from __future__ import annotations
 from datetime import datetime, UTC
 
@@ -40,6 +41,10 @@ class Project(Base):
     raw_dataset_path: Mapped[str] = mapped_column(String, nullable=False)
     cleaned_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
     engineered_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
+
+    raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    engineered_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     status: Mapped[str] = mapped_column(String, nullable=False) # while updating the status, i'll use enum
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
