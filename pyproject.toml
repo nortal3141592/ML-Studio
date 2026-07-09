@@ -1,0 +1,17 @@
+[project]
+name = "ml-studio"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi[standard]>=0.139.0",
+    "greenlet>=3.5.3",
+    "pandas>=3.0.3",
+    "pillow>=12.3.0",
+    "pwdlib[argon2]>=0.3.0",
+    "pyarrow>=24.0.0",
+    "pyjwt>=2.13.0",
+    "sqlalchemy>=2.0.51",
+]
