@@ -1,5 +1,5 @@
-from typing import Any
 from __future__ import annotations
+from typing import Any
 from datetime import datetime, UTC
 
 from sqlalchemy import String, Integer, Text, DateTime, JSON, ForeignKey, UniqueConstraint
@@ -42,9 +42,9 @@ class Project(Base):
     cleaned_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
     engineered_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
 
-    raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    engineered_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
+    cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
+    engineered_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
 
     status: Mapped[str] = mapped_column(String, nullable=False) # while updating the status, i'll use enum
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

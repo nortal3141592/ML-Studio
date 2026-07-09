@@ -2,6 +2,7 @@ from typing import Annotated
 import pandas as pd
 
 from file_utils import save_raw_dataset, cleanup_delete
+from metadata_utils import extract_metadata
 from starlette.concurrency import run_in_threadpool
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form
@@ -54,6 +55,8 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
         filepath = await run_in_threadpool(save_raw_dataset, df, new_project.id)
 
         new_project.raw_dataset_path = filepath
+        metadata = await run_in_threadpool(extract_metadata, df)
+        new_project.raw_metadata = metadata
 
         await db.commit()
         await db.refresh(new_project)
