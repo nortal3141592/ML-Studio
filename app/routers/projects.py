@@ -23,7 +23,6 @@ from pathlib import Path
 
 router = APIRouter()
 
-
 # ==============================
 # POST api/projects/upload
 # ==============================
@@ -84,15 +83,14 @@ async def get_project_metadata(project_id: int,current_user: CurrentUser, stage:
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     
-    if stage == DatasetStage.RAW:
-        metadata = project.raw_metadata
+    metadata_map = {
+        DatasetStage.RAW: project.raw_metadata,
+        DatasetStage.CLEANED: project.cleaned_metadata,
+        DatasetStage.ENGINEERED: project.engineered_metadata
+    }
     
-    elif stage == DatasetStage.CLEANED:
-        metadata = project.cleaned_metadata
-
-    elif stage == DatasetStage.ENGINEERED:
-        metadata = project.engineered_metadata
-
+    metadata = metadata_map[stage]
+    
     if metadata is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="metadata not found")
 
@@ -110,23 +108,17 @@ async def get_rows(project_id: int, stage: DatasetStage, current_user: CurrentUs
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
     
-    if stage == DatasetStage.RAW:
-        if project.raw_dataset_path is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset has been uploaded yet")
+    path_map = {
+        DatasetStage.RAW: project.raw_dataset_path,
+        DatasetStage.CLEANED: project.cleaned_dataset_path,
+        DatasetStage.ENGINEERED: project.engineered_dataset_path
+    }
 
-        rows = await run_in_threadpool(load_preview_rows, project.raw_dataset_path)
+    path = path_map[stage]
+
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"The {stage.value} dataset is not available yet")
     
-    elif stage == DatasetStage.CLEANED:
-        if project.cleaned_dataset_path is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The dataset hasn't been cleaned yet")
-        rows =  await run_in_threadpool(load_preview_rows, project.cleaned_dataset_path)
+    rows = await run_in_threadpool(load_preview_rows, path)
 
-    elif stage == DatasetStage.ENGINEERED:
-        if project.engineered_dataset_path is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The dataset hasn't been engineered yet")
-        rows = await run_in_threadpool(load_preview_rows, project.engineered_dataset_path)
-
-    if rows is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="metadata not found")
-    
     return {"rows": rows}
