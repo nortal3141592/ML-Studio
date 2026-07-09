@@ -14,7 +14,7 @@ from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import models
-from auth import CurrentUser
+from auth import CurrentUser, CurrentProject
 
 from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse
 
@@ -76,17 +76,11 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
 # GET api/projects/{id}/preview/{stage}
 # ========================================
 @router.get("/{project_id}/preview/{stage}", response_model=MetadataResponse)
-async def get_project_metadata(project_id: int,current_user: CurrentUser, stage: DatasetStage, db: Annotated[AsyncSession, Depends(get_db)]):
-    result = await db.execute(select(models.Project).where(models.Project.id == project_id, models.Project.user_id == current_user.id))
-    project = result.scalars().first()
-
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
-    
+async def get_project_metadata(current_project: CurrentProject, stage: DatasetStage):
     metadata_map = {
-        DatasetStage.RAW: project.raw_metadata,
-        DatasetStage.CLEANED: project.cleaned_metadata,
-        DatasetStage.ENGINEERED: project.engineered_metadata
+        DatasetStage.RAW: current_project.raw_metadata,
+        DatasetStage.CLEANED: current_project.cleaned_metadata,
+        DatasetStage.ENGINEERED: current_project.engineered_metadata
     }
     
     metadata = metadata_map[stage]
@@ -101,17 +95,11 @@ async def get_project_metadata(project_id: int,current_user: CurrentUser, stage:
 # GET api/projects/{id}/preview-rows/{stage}
 # ============================================
 @router.get("/{project_id}/preview-rows/{stage}", response_model=PreviewRowsResponse)
-async def get_rows(project_id: int, stage: DatasetStage, current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
-    result = await db.execute(select(models.Project).where(models.Project.id == project_id, models.Project.user_id == current_user.id))
-    project = result.scalars().first()
-
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
-    
+async def get_rows(current_project: CurrentProject, stage: DatasetStage):    
     path_map = {
-        DatasetStage.RAW: project.raw_dataset_path,
-        DatasetStage.CLEANED: project.cleaned_dataset_path,
-        DatasetStage.ENGINEERED: project.engineered_dataset_path
+        DatasetStage.RAW: current_project.raw_dataset_path,
+        DatasetStage.CLEANED: current_project.cleaned_dataset_path,
+        DatasetStage.ENGINEERED: current_project.engineered_dataset_path
     }
 
     path = path_map[stage]

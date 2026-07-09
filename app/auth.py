@@ -74,3 +74,14 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_schema)], db: An
     return user
 
 CurrentUser = Annotated[models.User, Depends(get_current_user)]
+
+async def get_current_project(project_id: int, current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]) -> models.Project:
+    result = await db.execute(select(models.Project).where(models.Project.id == project_id, models.Project.user_id == current_user.id))
+    project = result.scalars().first()
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    
+    return project
+
+CurrentProject = Annotated[models.Project, Depends(get_current_project)]
