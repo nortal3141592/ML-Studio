@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 
 # Image processing stuff
 from PIL import UnidentifiedImageError
-from image_utils import process_profile_image, delete_profile_image
+from utils.image_utils import process_profile_image, delete_profile_image
 from starlette.concurrency import run_in_threadpool # This here is for like async stuff
 
 from schemas import UserCreate, UserPrivate, UserPublic, UserUpdate, Token

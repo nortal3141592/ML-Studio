@@ -44,3 +44,13 @@ class ProjectPublic(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+class MetadataResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rows: int
+    columns: int
+    column_names: list[str]
+    dtypes: dict[str, str]
+    missing_values: dict[str, int]
+    memory_bytes: int

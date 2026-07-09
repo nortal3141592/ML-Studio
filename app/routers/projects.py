@@ -1,8 +1,9 @@
 from typing import Annotated
 import pandas as pd
 
-from file_utils import save_raw_dataset, cleanup_delete
-from metadata_utils import extract_metadata
+from utils.file_utils import save_raw_dataset, cleanup_delete
+from utils.metadata_utils import extract_metadata
+from utils.enum_utils import DatasetStage
 from starlette.concurrency import run_in_threadpool
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form
@@ -12,7 +13,7 @@ from sqlalchemy import select, func
 import models
 from auth import CurrentUser
 
-from schemas import ProjectPublic
+from schemas import ProjectPublic, MetadataResponse
 
 from pathlib import Path
 
@@ -20,7 +21,9 @@ from pathlib import Path
 router = APIRouter()
 
 
-
+# ==============================
+# POST api/projects/upload
+# ==============================
 @router.post("/upload", response_model=ProjectPublic, status_code=status.HTTP_201_CREATED)
 async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser, file: Annotated[UploadFile, File()], db: Annotated[AsyncSession, Depends(get_db)]):
     if not str(file.filename).endswith(".csv"):
@@ -66,5 +69,30 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
         cleanup_delete(project_id=new_project.id)
         await db.rollback()
         raise
+
+# ========================================
+# GET api/projects/{id}/preview/{stage}
+# ========================================
+@router.get("/{project_id}/preview/{stage}", response_model=MetadataResponse)
+async def get_project_metadata(project_id: int,current_user: CurrentUser, stage: DatasetStage, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(select(models.Project).where(models.Project.id == project_id, models.Project.user_id == current_user.id))
+    project = result.scalars().first()
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    
+    if stage == DatasetStage.RAW:
+        metadata = project.raw_metadata
+    
+    elif stage == DatasetStage.CLEANED:
+        metadata = project.cleaned_metadata
+
+    elif stage == DatasetStage.ENGINEERED:
+        metadata = project.engineered_metadata
+
+    if metadata is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="metadata not found")
+
+    return metadata
 
 
