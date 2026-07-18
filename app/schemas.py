@@ -31,7 +31,7 @@ class Token(BaseModel):
 
 
 # ==============================
-# Project related endpoints
+# Project related schemas
 # ==============================
 
 class ProjectPublic(BaseModel):
@@ -56,7 +56,12 @@ class MetadataResponse(BaseModel):
     missing_values: dict[str, int]
     memory_bytes: int
 
+    cleaning_summary: dict | None = Field(default=None)
+
 class PreviewRowsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     rows: list[dict[str, Any]]
+
+class CleaningRequest(BaseModel):
+    droppable_columns : list[str] = []

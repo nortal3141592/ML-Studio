@@ -1,11 +1,11 @@
 from typing import Annotated
 import pandas as pd
-from pathlib import Path
 
-from utils.file_utils import save_raw_dataset, cleanup_delete
+from utils.file_utils import cleanup_delete, save_dataset
 from utils.metadata_utils import extract_metadata
-from utils.enum_utils import DatasetStage
+from utils.enum_utils import DatasetStage, ProjectStatus
 from utils.preview_utils import load_preview_rows
+from utils.cleaning_utils import clean_data
 
 from starlette.concurrency import run_in_threadpool
 
@@ -16,7 +16,7 @@ from sqlalchemy import select, func
 import models
 from auth import CurrentUser, CurrentProject
 
-from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse
+from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse, CleaningRequest
 
 from pathlib import Path
 
@@ -50,14 +50,14 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
         project_name = name,
         user_id = current_user.id,
         raw_dataset_path = "", # temp
-        status = "UPLOADED"
+        status = ProjectStatus.READY.value
     )
 
     try:
         db.add(new_project)
         await db.flush()
 
-        filepath = await run_in_threadpool(save_raw_dataset, df, new_project.id)
+        filepath = await run_in_threadpool(save_dataset, df, new_project.id, DatasetStage.RAW)
 
         new_project.raw_dataset_path = filepath
         metadata = await run_in_threadpool(extract_metadata, df)
@@ -68,7 +68,7 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
 
         return new_project
     except Exception:
-        cleanup_delete(project_id=new_project.id)
+        cleanup_delete(project_id=new_project.id, stage=DatasetStage.RAW)
         await db.rollback()
         raise
 
@@ -110,3 +110,47 @@ async def get_rows(current_project: CurrentProject, stage: DatasetStage):
     rows = await run_in_threadpool(load_preview_rows, path)
 
     return {"rows": rows}
+
+# =======================================================
+# POST api/projects/{project_id}/clean
+# =======================================================
+
+# TODO: write invalidate_downstream() function later
+
+@router.post("/{project_id}/clean", response_model=MetadataResponse)
+async def clean_dataset(current_project: CurrentProject, droppable_columns: CleaningRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+    if not current_project.raw_dataset_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Upload the raw dataset first, only then you can begin cleaning it')
+    df = await run_in_threadpool(pd.read_parquet, current_project.raw_dataset_path)
+
+    for col in droppable_columns.droppable_columns:
+        if col not in df.columns:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Column '{col}' does not exist in the uploaded dataset.")
+
+    cleaned_df, cleaning_summary = await run_in_threadpool(clean_data, df, droppable_columns.droppable_columns)
+
+    if cleaned_df.shape[0] == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad Dataset! Cleaning removed all rows from the dataset")
+
+    if cleaned_df.shape[1] == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad Dataset! Cleaning removed all columns from the dataset.")
+
+    try:
+        filepath = await run_in_threadpool(save_dataset, cleaned_df, current_project.id, DatasetStage.CLEANED)
+
+        current_project.cleaned_dataset_path = filepath
+
+        cleaned_metadata = await run_in_threadpool(extract_metadata, cleaned_df)
+        cleaned_metadata.update({"cleaning_summary": cleaning_summary})
+
+        current_project.cleaned_metadata = cleaned_metadata
+        current_project.status = ProjectStatus.READY.value
+
+        await db.commit()
+        await db.refresh(current_project)
+
+        return cleaned_metadata
+    except Exception:
+        cleanup_delete(current_project.id, DatasetStage.CLEANED)
+        await db.rollback()
+        raise

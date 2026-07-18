@@ -39,8 +39,8 @@ class Project(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
 
     raw_dataset_path: Mapped[str] = mapped_column(String, nullable=False)
-    cleaned_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
-    engineered_dataset_path: Mapped[str] = mapped_column(String, nullable=True)
+    cleaned_dataset_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    engineered_dataset_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
