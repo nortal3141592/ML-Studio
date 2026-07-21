@@ -32,4 +32,10 @@ def cleanup_delete(project_id: int, stage: DatasetStage) -> None:
         if filepath.exists():
             filepath.unlink()
 
+def cleanup_delete_engineering(filepaths: list[str]) -> None:
+    for filepath in filepaths:
+        path = Path(filepath)
+
+        if path.exists():
+            path.unlink()
 
