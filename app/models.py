@@ -40,7 +40,16 @@ class Project(Base):
 
     raw_dataset_path: Mapped[str] = mapped_column(String, nullable=False)
     cleaned_dataset_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    engineered_dataset_path: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    x_train_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    x_cv_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    x_test_path: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    y_train_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    y_cv_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    y_test_path: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    preprocessor_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)

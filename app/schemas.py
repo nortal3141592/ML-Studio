@@ -61,7 +61,10 @@ class MetadataResponse(BaseModel):
 class PreviewRowsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    rows: list[dict[str, Any]]
+    x_rows: list[dict[str, Any]] | None = None
+    y_rows: list[dict[str, Any]] | None = None
+
+    rows: list[dict[str, Any]] | None = None
 
 class CleaningRequest(BaseModel):
     droppable_columns : list[str] = []

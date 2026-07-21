@@ -12,3 +12,8 @@ class ProjectStatus(str, Enum):
     TRAINING = "training"
     COMPLETED = "completed"
     FAILED = "failed"
+
+class DatasetSplit(str, Enum):
+    TRAIN = "train"
+    CV = "cv"
+    TEST = "test"
