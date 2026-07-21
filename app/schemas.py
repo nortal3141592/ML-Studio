@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from datetime import datetime
 from typing import Any
+from config import settings
 
 class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=50)
@@ -68,3 +69,33 @@ class PreviewRowsResponse(BaseModel):
 
 class CleaningRequest(BaseModel):
     droppable_columns : list[str] = []
+
+class FeatureEngineeringRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    target_column: str
+
+    train_split: int = settings.train_split
+    cv_split: int = settings.cv_split
+    test_split: int = settings.test_split
+
+class SplitMetadata(BaseModel):
+    x_rows: int
+    x_columns: int
+    y_rows: int
+
+class FeatureEngineeringResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    target_column: str
+
+    train: SplitMetadata
+    cv: SplitMetadata
+    test: SplitMetadata
+
+    scaled_columns: list[str]
+
+    encoded_columns: list[str]
+
+    feature_names_after_encoding: list[str]
+    number_of_features_after_encoding: int

@@ -13,5 +13,11 @@ class Settings(BaseSettings):
 
     max_upload_size_bytes: int = 5 * 1024 * 1024
 
+    train_split: int = 70
+    cv_split: int = 15
+    test_split: int = 15
+
+    random_state: int = 42
+
 
 settings = Settings() # pyright: ignore

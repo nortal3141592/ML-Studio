@@ -46,10 +46,10 @@ class Project(Base):
     x_test_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     y_train_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    y_cv_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    y_test_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    y_cv_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    y_test_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
-    preprocessor_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    preprocessor_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
 
     raw_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)

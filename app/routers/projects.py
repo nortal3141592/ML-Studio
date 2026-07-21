@@ -1,11 +1,14 @@
 from typing import Annotated
 import pandas as pd
 
+# utilities imports
 from utils.file_utils import cleanup_delete, save_dataset
 from utils.metadata_utils import extract_metadata
 from utils.enum_utils import DatasetStage, ProjectStatus, DatasetSplit
 from utils.preview_utils import load_preview_rows
 from utils.cleaning_utils import clean_data
+from utils.engineering_utils import engineer_data, save_preprocessor
+
 
 from starlette.concurrency import run_in_threadpool
 
@@ -16,7 +19,7 @@ from sqlalchemy import select, func
 import models
 from auth import CurrentUser, CurrentProject
 
-from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse, CleaningRequest
+from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse, CleaningRequest, FeatureEngineeringRequest, FeatureEngineeringResponse
 
 from pathlib import Path
 
@@ -174,6 +177,64 @@ async def clean_dataset(current_project: CurrentProject, droppable_columns: Clea
 
         return cleaned_metadata
     except Exception:
-        cleanup_delete(current_project.id, DatasetStage.CLEANED)
+        await run_in_threadpool(cleanup_delete, current_project.id, DatasetStage.CLEANED)
         await db.rollback()
         raise
+
+# ===========================================================================
+# POST /api/projects/{project_id}/engineer
+# ===========================================================================
+@router.post("/{project_id}/engineer", response_model=FeatureEngineeringResponse)
+async def feature_engineer_dataset(current_project: CurrentProject, engineering_request: FeatureEngineeringRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+    if not current_project.cleaned_dataset_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset hasn't been cleaned yet! Cannot progress further without cleaning the dataset")
+    
+    cleaned_df = await run_in_threadpool(pd.read_parquet, current_project.cleaned_dataset_path)
+
+    if engineering_request.target_column not in cleaned_df.columns:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target column '{engineering_request.target_column}' does not exist.")
+
+    ratios: tuple[int, int , int] = (engineering_request.train_split, engineering_request.cv_split, engineering_request.test_split)
+
+    if any(split <= 0 for split in ratios):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The split values must all be greater than zero.")
+
+    if sum(ratios) != 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The ratios of your splits don't add upto a 100%, please provide valid split ratios")
+
+    X_train_processed, X_cv_processed, X_test_processed,y_train,y_cv,y_test,preprocessor,metadata = await run_in_threadpool(engineer_data, cleaned_df=cleaned_df, target_column=engineering_request.target_column, split_ratios=ratios)
+
+    try:
+        x_train_path = await run_in_threadpool(save_dataset, X_train_processed, current_project.id, "x_train.parquet")
+        x_cv_path = await run_in_threadpool(save_dataset, X_cv_processed, current_project.id, "x_cv.parquet")
+        x_test_path = await run_in_threadpool(save_dataset, X_test_processed, current_project.id, "x_test.parquet")
+
+        y_train_path =  await run_in_threadpool(save_dataset, y_train, current_project.id, "y_train.parquet")
+        y_cv_path = await run_in_threadpool(save_dataset, y_cv, current_project.id, "y_cv.parquet")
+        y_test_path = await run_in_threadpool(save_dataset, y_test, current_project.id, "y_test.parquet")
+
+        preprocessor_path = await run_in_threadpool(save_preprocessor, preprocessor, current_project.id)
+
+        current_project.x_train_path = x_train_path
+        current_project.x_cv_path = x_cv_path
+        current_project.x_test_path = x_test_path
+
+        current_project.y_train_path = y_train_path
+        current_project.y_cv_path = y_cv_path
+        current_project.y_test_path = y_test_path
+
+        current_project.preprocessor_path = preprocessor_path
+
+        current_project.engineered_metadata = metadata
+
+        current_project.status = ProjectStatus.READY.value
+
+        await db.commit()
+        await db.refresh(current_project)
+
+        return metadata
+    except Exception:
+        await run_in_threadpool(cleanup_delete, current_project.id, DatasetStage.ENGINEERED)
+        await db.rollback()
+        raise
+
