@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+from typing import cast
 
 import pandas as pd
 
@@ -64,7 +65,13 @@ async def execute_training_job(run_id: int):
                     pd.read_parquet(y_test_p).squeeze("columns")
                 )
             
-            X_train, X_cv, X_test, y_train, y_cv, y_test = await asyncio.to_thread(load_data)
+            # Unpack loaded datasets
+            X_train, X_cv, X_test, y_train_raw, y_cv_raw, y_test_raw = await asyncio.to_thread(load_data)
+
+            # Ensure Pyright sees y as Series
+            y_train = cast(pd.Series, y_train_raw)
+            y_cv = cast(pd.Series, y_cv_raw)
+            y_test = cast(pd.Series, y_test_raw)
 
             training_run.status_message = "Training model...."
 
@@ -82,7 +89,7 @@ async def execute_training_job(run_id: int):
                 algorithm_enum,
                 hyperparameters_obj,
                 X_train, X_cv, X_test,
-                pd.Series(y_train), pd.Series(y_cv), pd.Series(y_test),
+                y_train, y_cv, y_test,
                 project.id,
                 training_run.id,
                 task_type_enum,
@@ -92,6 +99,7 @@ async def execute_training_job(run_id: int):
             training_run.status = TrainingStatus.COMPLETED.value
             training_run.status_message = "Training completed successfully."
             training_run.model_path = model_path
+            training_run.history_path = history_path
             training_run.training_time_seconds = training_time
             training_run.metrics = jsonable_encoder(metrics) # Safely converts Pydantic schema for JSON column
             

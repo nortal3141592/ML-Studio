@@ -385,11 +385,13 @@ class TrainingRunStatusResponse(BaseModel):
     id: int
     project_id: int
     algorithm: str
-    
 
     status: str
     progress: int
     status_message: str | None
+
+    model_path: str | None
+    history_path: str | None
     
     metrics: dict[str, Any] | None
     training_time_seconds: float | None
