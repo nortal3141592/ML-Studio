@@ -13,7 +13,7 @@ import models
 from database import AsyncSessionLocal
 from utils.enum_utils import TaskType, TrainingStatus, Algorithm
 from utils.training_utils import train_model
-from schemas import ALGORITHM_TO_HYPERPARAMETER_SCHEMA
+from schemas import ALGORITHM_TO_HYPERPARAMETER_SCHEMA, ALGORITHM_TASK_TYPE_MAP
 
 async def execute_training_job(run_id: int):
     async with AsyncSessionLocal() as db:

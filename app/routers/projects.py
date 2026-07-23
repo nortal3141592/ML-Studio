@@ -285,6 +285,14 @@ async def train_model(current_project: CurrentProject, request:TrainingRequest, 
     expected_schema = ALGORITHM_TO_HYPERPARAMETER_SCHEMA[request.algorithm]
     if not isinstance(request.hyperparameters, expected_schema):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The schema doesn't match the algorithm")
+
+    allowed_tasks = ALGORITHM_TASK_TYPE_MAP.get(request.algorithm, set())
+
+    project_task = TaskType(current_project.task_type) if isinstance(current_project.task_type, str) else current_project.task_type
+
+    if project_task not in allowed_tasks:
+        allowed_names = ', '.join([t.value for t in allowed_tasks])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Algorithm '{request.algorithm.value}' is not compatible with project task type,'{project_task.value}'. Supported task types: [{allowed_names}]") #pyright: ignore
     
     result = await db.execute(
         select(models.TrainingRun).where(

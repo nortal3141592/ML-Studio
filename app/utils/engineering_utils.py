@@ -148,7 +148,7 @@ def engineer_data(cleaned_df: pd.DataFrame,
     if task_type in (TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION):
         lencoder = LabelEncoder()
         encoded_values = lencoder.fit_transform(cleaned_df[target_column])
-        cleaned_df[target_column] = pd.Series(encoded_values, index=cleaned_df.index)
+        cleaned_df[target_column] = pd.Series(np.asarray(encoded_values), index=cleaned_df.index)
 
         target_mapping = {int(index): str(label) for index, label in enumerate(lencoder.classes_)}
 

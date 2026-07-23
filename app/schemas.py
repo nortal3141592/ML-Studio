@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any, Literal
 from config import settings
 
+from utils.enum_utils import Algorithm, TaskType
+
 from utils.enum_utils import Algorithm
 
 class UserBase(BaseModel):
@@ -377,6 +379,27 @@ ALGORITHM_TO_HYPERPARAMETER_SCHEMA = {
     Algorithm.RANDOM_FOREST: RandomForestHyperparameters,
     Algorithm.XGBOOST: XGBoostHyperparameters,
     Algorithm.NEURAL_NETWORK: NeuralNetworkHyperparameters,
+}
+
+ALGORITHM_TASK_TYPE_MAP: dict[Algorithm, set[TaskType]] = {
+    # Classification Only
+    Algorithm.LOGISTIC_REGRESSION: {TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION},
+    Algorithm.DECISION_TREE: {TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION},
+    Algorithm.RANDOM_FOREST: {TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION},
+    Algorithm.XGBOOST: {TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION},
+
+    # Regression Only
+    Algorithm.LINEAR_REGRESSION: {TaskType.REGRESSION},
+    Algorithm.RIDGE_REGRESSION: {TaskType.REGRESSION},
+    Algorithm.LASSO_REGRESSION: {TaskType.REGRESSION},
+    Algorithm.SGD_REGRESSOR: {TaskType.REGRESSION},
+
+    # Supports Both
+    Algorithm.NEURAL_NETWORK: {
+        TaskType.BINARY_CLASSIFICATION,
+        TaskType.MULTICLASS_CLASSIFICATION,
+        TaskType.REGRESSION,
+    },
 }
 
 class TrainingRunStatusResponse(BaseModel):

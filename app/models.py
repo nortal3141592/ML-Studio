@@ -86,7 +86,7 @@ class TrainingRun(Base):
 
     model_path: Mapped[str] = mapped_column(String, nullable=True) # i'll save using joblib
     history_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
-    metrics: Mapped[dict] = mapped_column(JSON, nullable=True)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
     training_time_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
