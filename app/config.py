@@ -19,5 +19,7 @@ class Settings(BaseSettings):
 
     random_state: int = 42
 
+    classification_unique_threshold: int = 20
+
 
 settings = Settings() # pyright: ignore

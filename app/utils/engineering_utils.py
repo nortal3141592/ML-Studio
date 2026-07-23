@@ -1,12 +1,15 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from config import settings
 import numpy as np
+from pandas.api.types import is_float_dtype, is_object_dtype, is_string_dtype, is_bool_dtype, is_integer_dtype
 
 from pathlib import Path
 import joblib
+
+from utils.enum_utils import TaskType
 
 UPLOADS_DIR = Path("uploads")
 
@@ -62,6 +65,32 @@ def save_preprocessor(preprocessor: ColumnTransformer, project_id: int) -> str:
 
     return str(filepath)
 
+def detect_task_type(y: pd.Series) -> tuple[TaskType, int]:
+    if is_float_dtype(y):
+        return TaskType.REGRESSION, 1
+    
+    if(is_object_dtype(y) or is_string_dtype(y) or is_bool_dtype(y) or isinstance(y.dtype, pd.CategoricalDtype)):
+        unique_classes = y.nunique()
+
+        if unique_classes == 2:
+            return TaskType.BINARY_CLASSIFICATION, 2
+
+        return TaskType.MULTICLASS_CLASSIFICATION, unique_classes
+
+    if is_integer_dtype(y):
+        unique_classes = y.nunique()
+
+        if unique_classes == 2:
+            return TaskType.BINARY_CLASSIFICATION, 2
+        
+        if unique_classes <= settings.classification_unique_threshold:
+            return TaskType.MULTICLASS_CLASSIFICATION, unique_classes
+        
+        return TaskType.REGRESSION, 1
+    
+    raise ValueError("Unable to Detect task type")
+
+
 def extract_engineering_metadata(
     X_train: pd.DataFrame,X_cv: pd.DataFrame,X_test: pd.DataFrame,
     y_train: pd.Series,y_cv: pd.Series,y_test: pd.Series,
@@ -102,6 +131,8 @@ def extract_engineering_metadata(
         "number_of_features_after_encoding": len(feature_names)
     }
 
+
+
 def engineer_data(cleaned_df: pd.DataFrame, 
     target_column: str, 
     split_ratios: tuple[int, int, int] = (settings.train_split, settings.cv_split, settings.test_split)
@@ -110,6 +141,18 @@ def engineer_data(cleaned_df: pd.DataFrame,
     pd.Series, pd.Series, pd.Series,
     ColumnTransformer, dict
 ]:
+    task_type, num_classes = detect_task_type(cleaned_df[target_column])
+
+    target_mapping = None
+
+    if task_type in (TaskType.BINARY_CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION):
+        lencoder = LabelEncoder()
+        encoded_values = lencoder.fit_transform(cleaned_df[target_column])
+        cleaned_df[target_column] = pd.Series(encoded_values, index=cleaned_df.index)
+
+        target_mapping = {int(index): str(label) for index, label in enumerate(lencoder.classes_)}
+
+
     X_train, X_cv, X_test, y_train, y_cv, y_test = split_dataset(cleaned_df, target_column, split_ratios)
 
     preprocessor, numeric_columns, categorical_columns = build_preprocessor(X_train)
@@ -118,11 +161,12 @@ def engineer_data(cleaned_df: pd.DataFrame,
 
     metadata = extract_engineering_metadata(X_train_processed, X_cv_processed, X_test_processed, y_train, y_cv, y_test, target_column, preprocessor, numeric_columns, categorical_columns)
 
+
+    metadata.update({"task_type": task_type.value, "num_classes": num_classes, "target_mapping": target_mapping})
+
     return (
         X_train_processed, X_cv_processed, X_test_processed,
         y_train,y_cv,y_test,
         preprocessor,metadata
     )
-
-
 

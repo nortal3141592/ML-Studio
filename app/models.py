@@ -2,10 +2,13 @@ from __future__ import annotations
 from typing import Any
 from datetime import datetime, UTC
 
-from sqlalchemy import String, Integer, Text, DateTime, JSON, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Text, DateTime, JSON, ForeignKey, UniqueConstraint, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
+
+from enum import Enum
+from utils.enum_utils import TrainingStatus
 class User(Base):
     __tablename__ = "users"
 
@@ -55,6 +58,10 @@ class Project(Base):
     cleaned_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     engineered_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
 
+    target_column: Mapped[str | None] = mapped_column(String, nullable=True)
+    task_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    num_classes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     status: Mapped[str] = mapped_column(String, nullable=False) # while updating the status, i'll use enum
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
@@ -69,12 +76,22 @@ class TrainingRun(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
 
     algorithm: Mapped[str] = mapped_column(String, nullable=False) # i'll use enum
-    model_path: Mapped[str] = mapped_column(String, nullable=False) # i'll save using joblib
     hyperparameters: Mapped[dict] = mapped_column(JSON, nullable=False)
-    metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    random_seed: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    status: Mapped[str] = mapped_column(String, nullable=False) # while updating the status, i'll use enum
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    status_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    
+
+    model_path: Mapped[str] = mapped_column(String, nullable=True) # i'll save using joblib
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=True)
+    training_time_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
     project: Mapped[Project] = relationship(back_populates="training_runs")
 
-    status: Mapped[str] = mapped_column(String, nullable=False) # while updating the status, i'll use enum
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))

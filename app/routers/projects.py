@@ -4,27 +4,31 @@ import pandas as pd
 # utilities imports
 from utils.file_utils import cleanup_delete, save_dataset, cleanup_delete_engineering
 from utils.metadata_utils import extract_metadata
-from utils.enum_utils import DatasetStage, ProjectStatus, DatasetSplit
+from utils.enum_utils import DatasetStage, ProjectStatus, DatasetSplit, Algorithm, TrainingStatus
 from utils.preview_utils import load_preview_rows
 from utils.cleaning_utils import clean_data
 from utils.engineering_utils import engineer_data, save_preprocessor
+from utils.background_task_utils import execute_training_job
 
 
 from starlette.concurrency import run_in_threadpool
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form, BackgroundTasks
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 import models
 from auth import CurrentUser, CurrentProject
 
-from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse, CleaningRequest, FeatureEngineeringRequest, FeatureEngineeringResponse
+# from schemas import ProjectPublic, MetadataResponse, PreviewRowsResponse, CleaningRequest, FeatureEngineeringRequest, FeatureEngineeringResponse
+from schemas import *
 
 from pathlib import Path
 
 
 router = APIRouter()
+
 
 # ==============================
 # POST api/projects/upload
@@ -186,6 +190,8 @@ async def clean_dataset(current_project: CurrentProject, droppable_columns: Clea
 # ===========================================================================
 @router.post("/{project_id}/engineer", response_model=FeatureEngineeringResponse)
 async def feature_engineer_dataset(current_project: CurrentProject, engineering_request: FeatureEngineeringRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+    
+    
     if not current_project.cleaned_dataset_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset hasn't been cleaned yet! Cannot progress further without cleaning the dataset")
     
@@ -243,6 +249,10 @@ async def feature_engineer_dataset(current_project: CurrentProject, engineering_
 
         current_project.status = ProjectStatus.READY.value
 
+        current_project.target_column = metadata["target_column"]
+        current_project.task_type = metadata["task_type"]
+        current_project.num_classes = metadata["num_classes"]
+
         await db.commit()
         await db.refresh(current_project)
 
@@ -252,3 +262,82 @@ async def feature_engineer_dataset(current_project: CurrentProject, engineering_
         await db.rollback()
         raise
 
+# ===========================================================================
+# POST /api/projects/{project_id}/train
+# ===========================================================================
+
+# NOTE:
+# Two simultaneous requests could theoretically create two queued runs.
+# Acceptable for V1.
+
+ACTIVE_TRAINING_STATUSES = (TrainingStatus.QUEUED.value, TrainingStatus.TRAINING.value, TrainingStatus.SAVING_MODEL.value)
+
+@router.post("/{project_id}/train", response_model=TrainingResponse, status_code=status.HTTP_202_ACCEPTED)
+async def train_model(current_project: CurrentProject, request:TrainingRequest, background_tasks: BackgroundTasks, db: Annotated[AsyncSession, Depends(get_db)]):
+    if not all([
+        current_project.x_train_path, current_project.x_cv_path, current_project.x_test_path,
+        current_project.y_train_path, current_project.y_cv_path, current_project.y_test_path,
+        current_project.preprocessor_path, current_project.engineered_metadata, 
+        current_project.target_column, current_project.task_type
+    ]) or current_project.num_classes is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The data hasn't been engineered yet")
+    
+    expected_schema = ALGORITHM_TO_HYPERPARAMETER_SCHEMA[request.algorithm]
+    if not isinstance(request.hyperparameters, expected_schema):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The schema doesn't match the algorithm")
+    
+    result = await db.execute(
+        select(models.TrainingRun).where(
+            models.TrainingRun.project_id == current_project.id, 
+            models.TrainingRun.status.in_(ACTIVE_TRAINING_STATUSES)
+        )
+    )
+    if result.scalars().first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A training run is already in progress for this project")
+    
+    new_training_run = models.TrainingRun(
+        project_id = current_project.id,
+        algorithm = request.algorithm.value,
+        hyperparameters = request.hyperparameters.model_dump(),
+        random_seed = request.random_seed,
+        status = TrainingStatus.QUEUED.value,
+        progress = 0,
+        status_message = "Waiting for worker..."
+    )
+
+    try:
+        db.add(new_training_run)
+        await db.commit()
+        await db.refresh(new_training_run)
+
+        # 5. Dispatch the Worker
+        background_tasks.add_task(execute_training_job, new_training_run.id)
+
+        return TrainingResponse(
+            message="Training job queued successfully.",
+            run_id=new_training_run.id,
+            status=new_training_run.status,
+        )
+        
+    except Exception:
+        await db.rollback()
+        raise
+
+@router.get("/{project_id}/runs/{run_id}", response_model=TrainingRunStatusResponse)
+async def get_training_run_status(run_id: int, current_project: CurrentProject,  db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.TrainingRun).where(
+            models.TrainingRun.id == run_id,
+            models.TrainingRun.project_id == current_project.id
+        )
+    )
+    
+    training_run = result.scalars().first()
+
+    if not training_run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Training run not found for this project"
+        )
+
+    return training_run
