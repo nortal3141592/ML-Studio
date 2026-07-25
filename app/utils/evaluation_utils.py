@@ -1,7 +1,11 @@
-from utils.enum_utils import Metric, TaskType
+from utils.enum_utils import Metric, TaskType, Algorithm
 import models
 from fastapi import HTTPException, status
-from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics
+from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse
+import json
+
+from pathlib import Path
+import joblib
 
 IS_HIGHER_BETTER_MAP = {
     Metric.LOSS: False,
@@ -354,5 +358,95 @@ def generate_insights(model_metrics: dict, task_type: str) -> list[InsightRespon
     else:
         raise ValueError(f"Invalid task type - {task_type}")
 
-            
+def load_loss_curve(algorithm: str, history_path: str) -> LossCurveResponse:
+    if algorithm != Algorithm.NEURAL_NETWORK.value:
+        raise ValueError(f"Cannot generate loss curve for {algorithm}. Loss curves can only be generated for {Algorithm.NEURAL_NETWORK.value}s")
 
+    
+    with open(history_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    if "loss" not in data or "val_loss" not in data:
+        raise ValueError("History file is missing loss information.")
+
+    if len(data["loss"]) != len(data["val_loss"]):
+        raise ValueError("Training and validation loss have different lengths.")
+
+    epochs = list(range(1, len(data["loss"]) + 1))
+
+
+    return LossCurveResponse(
+        epochs=epochs,
+        train_loss=data["loss"],
+        cv_loss = data['val_loss']
+    )
+
+def load_training_model(model_path: str):
+    path = Path(model_path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+
+    return joblib.load(path)
+
+def load_preprocessor(preprocessor_path: str):
+    path = Path(preprocessor_path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Preprocessor file not found : {preprocessor_path}")
+
+    return joblib.load(path)
+
+def extract_feature_importance(model_path: str, preprocessor_path: str) -> FeatureImportanceResponse:
+    model, preprocessor = load_training_model(model_path), load_preprocessor(preprocessor_path)
+
+    if not hasattr(model, "feature_importances_"):
+        raise ValueError("This model does not expose feature importances")
+
+    feature_names = preprocessor.get_feature_names_out()
+
+    feature_importances = model.feature_importances_
+
+    if len(feature_names) != len(feature_importances):
+        raise ValueError("Feature names and feature importances have different lengths.")
+
+    pairs = list(zip(feature_names, feature_importances))
+
+    sorted_pairs = sorted(pairs, key = lambda pair: pair[1], reverse=True)
+
+    features = []
+
+    for feature_name, importance in sorted_pairs:
+        features.append(FeatureImportance(feature=feature_name, importance=float(importance)))
+
+    return FeatureImportanceResponse(features=features)
+
+def extract_feature_coefficients(model_path: str, preprocessor_path: str) -> FeatureCoefficientResponse:
+    model, preprocessor = load_training_model(model_path), load_preprocessor(preprocessor_path)
+
+    if not hasattr(model, "coef_"):
+        raise ValueError("This model does not expose coefficients")
+
+    coefficients = model.coef_
+
+    if coefficients.ndim == 2:
+        if coefficients.shape[0] == 1:
+            coefficients = coefficients[0]
+        else:
+            raise ValueError("Coefficient visualization is currently only supported for regression and binary classification")
+
+    feature_names = preprocessor.get_feature_names_out()
+
+    if len(feature_names) != len(coefficients):
+        raise ValueError("Feature names and coefficients have different lengths.")
+
+    pairs = list(zip(feature_names, coefficients))
+
+    sorted_pairs = sorted(pairs, key = lambda pair: abs(pair[1]), reverse=True)
+
+    features = []
+
+    for feature_name, coeff in sorted_pairs:
+        features.append(FeatureCoefficient(feature=feature_name, coefficient=float(coeff)))
+
+    return FeatureCoefficientResponse(features=features)

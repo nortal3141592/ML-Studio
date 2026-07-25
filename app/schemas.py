@@ -448,3 +448,22 @@ class InsightResponse(BaseModel):
     title: str
     description: str
     severity: str
+
+class LossCurveResponse(BaseModel):
+    epochs: list[int]
+    train_loss: list[float]
+    cv_loss: list[float]
+
+class FeatureImportance(BaseModel):
+    feature: str
+    importance: float
+
+class FeatureImportanceResponse(BaseModel):
+    features: list[FeatureImportance]
+
+class FeatureCoefficient(BaseModel):
+    feature: str
+    coefficient: float
+
+class FeatureCoefficientResponse(BaseModel):
+    features: list[FeatureCoefficient]
