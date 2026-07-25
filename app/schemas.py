@@ -423,3 +423,28 @@ class TrainingRunStatusResponse(BaseModel):
     
     created_at: datetime
     updated_at: datetime
+
+# ===========================================================================
+# EVALUATION SCHEMAS
+# ===========================================================================
+class MetricComparisonResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    metric: str
+    higher_is_better: bool
+    train: float
+    cv: float
+    test: float
+
+class GeneralizationGapResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    metric: str
+    train: float
+    cv: float
+    gap: float
+
+class InsightResponse(BaseModel):
+    title: str
+    description: str
+    severity: str

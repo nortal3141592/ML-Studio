@@ -45,3 +45,13 @@ class TrainingStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+
+class Metric(str, Enum):
+    LOSS = "loss"
+    MAE = "mae"
+    RMSE = "rmse"
+    R2 = "r2"
+    ACCURACY = "accuracy"
+    PRECISION = "precision"
+    RECALL = "recall"
+    F1 = "f1"

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from routers import projects, users
+from routers import projects, users, evaluation
 
 from database import engine, Base
 
@@ -18,3 +18,4 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(evaluation.router, prefix="/api/projects", tags = ["Evaluation"])
