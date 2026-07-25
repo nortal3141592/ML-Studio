@@ -79,7 +79,7 @@ def calculate_all_generalization_gap(model_metrics: dict, task_type: str) -> dic
                 generalization_dict.update({metric_point.value: {"train": train, "cv": cv, "gap": gap}})
 
     else:
-        raise ValueError(f"Unsupported task type : {task_type}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid task type - {task_type}")
 
 
     return generalization_dict
@@ -356,21 +356,21 @@ def generate_insights(model_metrics: dict, task_type: str) -> list[InsightRespon
         return generate_classification_insights(ClassificationMetrics.model_validate(model_metrics))
 
     else:
-        raise ValueError(f"Invalid task type - {task_type}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = f"Invalid task type - {task_type}")
 
 def load_loss_curve(algorithm: str, history_path: str) -> LossCurveResponse:
     if algorithm != Algorithm.NEURAL_NETWORK.value:
-        raise ValueError(f"Cannot generate loss curve for {algorithm}. Loss curves can only be generated for {Algorithm.NEURAL_NETWORK.value}s")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = f"Cannot generate loss curve for {algorithm}. Loss curves can only be generated for {Algorithm.NEURAL_NETWORK.value}s")
 
     
     with open(history_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     if "loss" not in data or "val_loss" not in data:
-        raise ValueError("History file is missing loss information.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "History file is missing loss information.")
 
     if len(data["loss"]) != len(data["val_loss"]):
-        raise ValueError("Training and validation loss have different lengths.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "Training and validation loss have different lengths.")
 
     epochs = list(range(1, len(data["loss"]) + 1))
 
@@ -385,7 +385,7 @@ def load_training_model(model_path: str):
     path = Path(model_path)
 
     if not path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"Model file not found: {model_path}")
 
     return joblib.load(path)
 
@@ -393,7 +393,7 @@ def load_preprocessor(preprocessor_path: str):
     path = Path(preprocessor_path)
 
     if not path.exists():
-        raise FileNotFoundError(f"Preprocessor file not found : {preprocessor_path}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"Preprocessor file not found : {preprocessor_path}")
 
     return joblib.load(path)
 
@@ -401,14 +401,14 @@ def extract_feature_importance(model_path: str, preprocessor_path: str) -> Featu
     model, preprocessor = load_training_model(model_path), load_preprocessor(preprocessor_path)
 
     if not hasattr(model, "feature_importances_"):
-        raise ValueError("This model does not expose feature importances")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "This model does not expose feature importances")
 
     feature_names = preprocessor.get_feature_names_out()
 
     feature_importances = model.feature_importances_
 
     if len(feature_names) != len(feature_importances):
-        raise ValueError("Feature names and feature importances have different lengths.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "Feature names and feature importances have different lengths.")
 
     pairs = list(zip(feature_names, feature_importances))
 
@@ -425,7 +425,7 @@ def extract_feature_coefficients(model_path: str, preprocessor_path: str) -> Fea
     model, preprocessor = load_training_model(model_path), load_preprocessor(preprocessor_path)
 
     if not hasattr(model, "coef_"):
-        raise ValueError("This model does not expose coefficients")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "This model does not expose coefficients")
 
     coefficients = model.coef_
 
@@ -433,12 +433,12 @@ def extract_feature_coefficients(model_path: str, preprocessor_path: str) -> Fea
         if coefficients.shape[0] == 1:
             coefficients = coefficients[0]
         else:
-            raise ValueError("Coefficient visualization is currently only supported for regression and binary classification")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "Coefficient visualization is currently only supported for regression and binary classification")
 
     feature_names = preprocessor.get_feature_names_out()
 
     if len(feature_names) != len(coefficients):
-        raise ValueError("Feature names and coefficients have different lengths.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = "Feature names and coefficients have different lengths.")
 
     pairs = list(zip(feature_names, coefficients))
 

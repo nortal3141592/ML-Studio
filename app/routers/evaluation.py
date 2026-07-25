@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 
+from starlette.concurrency import run_in_threadpool
+
 from auth import CurrentProject
 import models
 from utils.enum_utils import Metric, TaskType
@@ -24,6 +26,9 @@ async def get_metrics(current_project: CurrentProject, run_id: int, db: DBSessio
     if not training_run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
+    if training_run.metrics is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Metrics are not available for this training run.")
+
     return training_run.metrics
 
 @router.get("/{project_id}/runs/{run_id}/bar-chart", response_model = MetricComparisonResponse)
@@ -35,8 +40,10 @@ async def get_bar_chart_data(current_project: CurrentProject, run_id: int, metri
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
     model_metrics = training_run.metrics
+    if model_metrics is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Metrics are not available for this training run.")
+    
     task_type = current_project.task_type
-
     if task_type is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type hasn't been determined yet")
 
@@ -59,8 +66,10 @@ async def get_generalization_gap(current_project: CurrentProject, run_id: int, m
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
     model_metrics = training_run.metrics
-    task_type = current_project.task_type
+    if model_metrics is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Metrics are not available for this training run.")
 
+    task_type = current_project.task_type
     if task_type is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type hasn't been determined yet")   
 
@@ -82,8 +91,10 @@ async def get_generalization_gaps(current_project: CurrentProject, run_id: int, 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
     model_metrics = training_run.metrics
-    task_type = current_project.task_type
+    if model_metrics is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Metrics are not available for this training run.")
 
+    task_type = current_project.task_type
     if task_type is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type hasn't been determined yet")   
 
@@ -100,8 +111,10 @@ async def get_insights(current_project: CurrentProject, run_id: int, db: DBSessi
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
     model_metrics = training_run.metrics
-    task_type = current_project.task_type
+    if model_metrics is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Metrics are not available for this training run.")
 
+    task_type = current_project.task_type
     if task_type is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type hasn't been determined yet")   
 
@@ -118,12 +131,15 @@ async def get_nn_loss_curve(current_project: CurrentProject, run_id: int, db: DB
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
 
     algorithm = training_run.algorithm
-    history_path = training_run.history_path
+    if algorithm is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Algorithm not found or not specified")
 
+    history_path = training_run.history_path
     if history_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="History file not found")
 
-    return load_loss_curve(algorithm, history_path)
+    loss_curve_data = await run_in_threadpool(load_loss_curve, algorithm, history_path)
+    return loss_curve_data
 
 @router.get("/{project_id}/runs/{run_id}/feature-importance", response_model=FeatureImportanceResponse)
 async def get_feature_importances(current_project: CurrentProject, run_id: int, db: DBSession):
@@ -138,8 +154,10 @@ async def get_feature_importances(current_project: CurrentProject, run_id: int, 
 
     if training_run.model_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model hasn't been trained yet")
-    
-    return extract_feature_importance(training_run.model_path, current_project.preprocessor_path)
+
+    feature_importance_data = await run_in_threadpool(extract_feature_importance, training_run.model_path, current_project.preprocessor_path)
+
+    return feature_importance_data
 
 @router.get("/{project_id}/runs/{run_id}/coefficients", response_model=FeatureCoefficientResponse)
 async def get_coefficients(current_project: CurrentProject, run_id: int, db: DBSession):
@@ -155,5 +173,8 @@ async def get_coefficients(current_project: CurrentProject, run_id: int, db: DBS
     if training_run.model_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model hasn't been trained yet")
 
-    return extract_feature_coefficients(training_run.model_path, current_project.preprocessor_path)
+
+    feature_coefficient_data = await run_in_threadpool(extract_feature_coefficients, training_run.model_path, current_project.preprocessor_path)
+
+    return feature_coefficient_data
 
