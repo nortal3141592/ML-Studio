@@ -472,13 +472,34 @@ class FeatureCoefficientResponse(BaseModel):
 # MASTER DASHBOARD SCHEMAS
 # ==============================================================================
 class RunSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     run_id: int
     algorithm: str
     hyperparameters: dict[str, Any]
 
 class LeaderBoardEntry(RunSummary):
+    model_config = ConfigDict(from_attributes=True)
+
     metrics: ClassificationMetrics | RegressionMetrics
     training_time_seconds: float
 
 class LeaderBoardResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     entries: list[LeaderBoardEntry]
+
+class MultiModelComparisonEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: int
+    algorithm: str
+    hyperparameters: dict[str, Any]
+    value: float
+
+class MultiModelComparisonResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    metric: str
+    higher_is_better: bool
+    entries: list[MultiModelComparisonEntry]

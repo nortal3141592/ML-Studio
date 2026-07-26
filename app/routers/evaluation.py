@@ -10,9 +10,9 @@ from starlette.concurrency import run_in_threadpool
 from auth import CurrentProject
 import models
 from utils.enum_utils import Metric, TaskType
-from utils.evaluation_utils import bar_chart_data, calculate_generalization_gap, calculate_all_generalization_gap, generate_insights, load_loss_curve, extract_feature_importance, extract_feature_coefficients, build_leaderboard
+from utils.evaluation_utils import bar_chart_data, calculate_generalization_gap, calculate_all_generalization_gap, generate_insights, load_loss_curve, extract_feature_importance, extract_feature_coefficients, build_leaderboard, build_metric_comparison
 
-from schemas import ClassificationMetrics, RegressionMetrics, MetricComparisonResponse, GeneralizationGapResponse, InsightResponse, LossCurveResponse, FeatureImportanceResponse, FeatureCoefficientResponse, LeaderBoardResponse
+from schemas import ClassificationMetrics, RegressionMetrics, MetricComparisonResponse, GeneralizationGapResponse, InsightResponse, LossCurveResponse, FeatureImportanceResponse, FeatureCoefficientResponse, LeaderBoardResponse, MultiModelComparisonResponse
 
 router = APIRouter()
 
@@ -183,3 +183,10 @@ async def get_project_leaderboard(current_project: CurrentProject,sort_by: Metri
     if current_project.task_type is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type of this project hasn't been determined yet")
     return await build_leaderboard(current_project.task_type, current_project.id, db, sort_by)
+
+@router.get("/{project_id}/dashboard/metric-comparison", response_model=MultiModelComparisonResponse)
+async def get_multi_model_comparison(current_project: CurrentProject, metric: Metric, db: DBSession):
+    if current_project.task_type is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type for this project hasn't been determined yet")
+
+    return await build_metric_comparison(current_project.task_type, current_project.id, metric, db)

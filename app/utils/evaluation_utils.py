@@ -1,7 +1,7 @@
 from utils.enum_utils import Metric, TaskType, Algorithm, TrainingStatus
 import models
 from fastapi import HTTPException, status
-from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse, LeaderBoardEntry, LeaderBoardResponse
+from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse, LeaderBoardEntry, LeaderBoardResponse, MultiModelComparisonEntry, MultiModelComparisonResponse
 import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -509,4 +509,41 @@ async def build_leaderboard(task_type: str, project_id: int,  db: AsyncSession, 
     
     return LeaderBoardResponse(entries=sorted_leaderboard)
 
+async def build_metric_comparison(task_type: str, project_id: int, metric: Metric, db: AsyncSession) -> MultiModelComparisonResponse:
+    if (task_type == TaskType.REGRESSION.value and metric in CLASSIFICATION_METRIC_POINTS) or ((task_type == TaskType.BINARY_CLASSIFICATION.value or task_type == TaskType.MULTICLASS_CLASSIFICATION.value) and metric in REGRESSION_METRIC_POINTS):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The sorting metric isn't compatible with the task type")
+
+    is_higher_better = IS_HIGHER_BETTER_MAP[metric]
+
+    completed_runs = await get_completed_runs(db, project_id)
+
+    if not completed_runs:
+        return MultiModelComparisonResponse(metric=metric, higher_is_better=is_higher_better, entries = [])
+
+    raw_data = []
+
+    for training_run in completed_runs:
+        if training_run.metrics is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for the run haven't been evaluated yet")
+        if training_run.training_time_seconds is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="training time for this run hasn't been evaluated yet")
+
+        metrics = training_run.metrics
+
+        raw_data.append(
+            MultiModelComparisonEntry(
+                run_id=training_run.id,
+                algorithm=training_run.algorithm,
+                hyperparameters=training_run.hyperparameters,
+                value = metrics[f'test_{metric.value}']
+            )
+        )
+
+    return MultiModelComparisonResponse(
+        metric = metric.value,
+        higher_is_better=is_higher_better,
+        entries=raw_data
+    )
+
+    
 
