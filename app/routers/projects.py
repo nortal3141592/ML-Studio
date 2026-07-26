@@ -9,6 +9,7 @@ from utils.preview_utils import load_preview_rows
 from utils.cleaning_utils import clean_data
 from utils.engineering_utils import engineer_data, save_preprocessor
 from utils.background_task_utils import execute_training_job
+from utils.invalidation_utils import invalidate_engineering_artifacts, invalidate_training_runs
 
 
 from starlette.concurrency import run_in_threadpool
@@ -27,10 +28,15 @@ from schemas import *
 
 from pathlib import Path
 from shutil import rmtree
+import zipfile
+import json
+import tempfile
+
 
 
 router = APIRouter()
 
+ACTIVE_TRAINING_STATUSES = (TrainingStatus.QUEUED.value, TrainingStatus.TRAINING.value, TrainingStatus.SAVING_MODEL.value)
 
 # ==============================
 # POST api/projects/upload
@@ -153,6 +159,15 @@ async def get_rows(current_project: CurrentProject, stage: DatasetStage, split: 
 async def clean_dataset(current_project: CurrentProject, droppable_columns: CleaningRequest, db: Annotated[AsyncSession, Depends(get_db)]):
     if not current_project.raw_dataset_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Upload the raw dataset first, only then you can begin cleaning it')
+
+    result = await db.execute(
+        select(models.TrainingRun)
+        .where(models.TrainingRun.project_id == current_project.id, models.TrainingRun.status.in_(ACTIVE_TRAINING_STATUSES))
+    )
+
+    if result.scalars().first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot re-clean while a training run is in progress")
+        
     df = await run_in_threadpool(pd.read_parquet, current_project.raw_dataset_path)
 
     for col in droppable_columns.droppable_columns:
@@ -166,6 +181,10 @@ async def clean_dataset(current_project: CurrentProject, droppable_columns: Clea
 
     if cleaned_df.shape[1] == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad Dataset! Cleaning removed all columns from the dataset.")
+
+    if current_project.cleaned_dataset_path:
+        await invalidate_training_runs(db, current_project.id)
+        await invalidate_engineering_artifacts(current_project)
 
     try:
         filepath = await run_in_threadpool(save_dataset, cleaned_df, current_project.id, "cleaned.parquet")
@@ -192,10 +211,17 @@ async def clean_dataset(current_project: CurrentProject, droppable_columns: Clea
 # ===========================================================================
 @router.post("/{project_id}/engineer", response_model=FeatureEngineeringResponse)
 async def feature_engineer_dataset(current_project: CurrentProject, engineering_request: FeatureEngineeringRequest, db: Annotated[AsyncSession, Depends(get_db)]):
-    
-    
     if not current_project.cleaned_dataset_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset hasn't been cleaned yet! Cannot progress further without cleaning the dataset")
+
+    result = await db.execute(
+        select(models.TrainingRun)
+        .where(models.TrainingRun.project_id == current_project.id, models.TrainingRun.status.in_(ACTIVE_TRAINING_STATUSES))
+    )
+
+    if result.scalars().first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot re-engineer while a training run is in progress")
+
     
     ratios: tuple[int, int , int] = (engineering_request.train_split, engineering_request.cv_split, engineering_request.test_split)
 
@@ -213,6 +239,9 @@ async def feature_engineer_dataset(current_project: CurrentProject, engineering_
     X_train_processed, X_cv_processed, X_test_processed,y_train,y_cv,y_test,preprocessor,metadata = await run_in_threadpool(engineer_data, cleaned_df=cleaned_df, target_column=engineering_request.target_column, split_ratios=ratios)
 
     saved_paths: list[str] = []
+
+    if current_project.x_train_path and current_project.x_cv_path and current_project.x_test_path and current_project.y_train_path and current_project.y_cv_path and current_project.y_test_path:
+        await invalidate_training_runs(db, current_project.id)
     
     try:
 
@@ -272,7 +301,6 @@ async def feature_engineer_dataset(current_project: CurrentProject, engineering_
 # Two simultaneous requests could theoretically create two queued runs.
 # Acceptable for V1.
 
-ACTIVE_TRAINING_STATUSES = (TrainingStatus.QUEUED.value, TrainingStatus.TRAINING.value, TrainingStatus.SAVING_MODEL.value)
 
 @router.post("/{project_id}/train", response_model=TrainingResponse, status_code=status.HTTP_202_ACCEPTED)
 async def train_model(current_project: CurrentProject, request:TrainingRequest, background_tasks: BackgroundTasks, db: Annotated[AsyncSession, Depends(get_db)]):
@@ -407,6 +435,48 @@ async def delete_project(current_project: CurrentProject, db: Annotated[AsyncSes
 
     if project_dir.exists():
         await run_in_threadpool(rmtree, project_dir)
+
+@router.get("/{project_id}/runs/{run_id}/download/bundle")
+async def download_run_bundle(current_project: CurrentProject, run_id: int, background_tasks: BackgroundTasks, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(select(models.TrainingRun).where(models.TrainingRun.id == run_id, models.TrainingRun.project_id == current_project.id))
+    training_run = result.scalars().first()
+
+    if not training_run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
+
+    if training_run.model_path is None or current_project.preprocessor_path is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Model or preprocessor not available for this run")
+
+    model_path = Path(training_run.model_path)
+    preprocessor_path = Path(current_project.preprocessor_path)
+
+    if not model_path.exists() or not preprocessor_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more required files are missing on disk")
+
+    def build_zip() -> str:
+        temp_dir = tempfile.mkdtemp()
+        zip_path = Path(temp_dir) / f"run_{run_id}_bundle.zip"
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(model_path, arcname=model_path.name)
+            zf.write(preprocessor_path, arcname=preprocessor_path.name)
+            zf.writestr("metrics.json", json.dumps(training_run.metrics, indent=2))
+
+        return str(zip_path)
+
+    zip_path = await run_in_threadpool(build_zip)
+
+    def cleanup_zip(path: str):
+        parent_dir = Path(path).parent
+        if parent_dir.exists():
+            rmtree(parent_dir)
+
+    background_tasks.add_task(cleanup_zip, zip_path)
+
+    filename = f"{current_project.project_name}_{training_run.algorithm}_run{run_id}_bundle.zip"
+
+    return FileResponse(path=zip_path, filename=filename, media_type="application/zip")
+
 
 @router.delete("/{project_id}/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_run(current_project: CurrentProject, run_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
