@@ -467,3 +467,18 @@ class FeatureCoefficient(BaseModel):
 
 class FeatureCoefficientResponse(BaseModel):
     features: list[FeatureCoefficient]
+
+# ==============================================================================
+# MASTER DASHBOARD SCHEMAS
+# ==============================================================================
+class RunSummary(BaseModel):
+    run_id: int
+    algorithm: str
+    hyperparameters: dict[str, Any]
+
+class LeaderBoardEntry(RunSummary):
+    metrics: ClassificationMetrics | RegressionMetrics
+    training_time_seconds: float
+
+class LeaderBoardResponse(BaseModel):
+    entries: list[LeaderBoardEntry]

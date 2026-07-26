@@ -1,8 +1,11 @@
-from utils.enum_utils import Metric, TaskType, Algorithm
+from utils.enum_utils import Metric, TaskType, Algorithm, TrainingStatus
 import models
 from fastapi import HTTPException, status
-from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse
+from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse, LeaderBoardEntry, LeaderBoardResponse
 import json
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from pathlib import Path
 import joblib
@@ -17,6 +20,9 @@ IS_HIGHER_BETTER_MAP = {
     Metric.RECALL: True,
     Metric.F1: True
 }
+
+REGRESSION_METRIC_POINTS = (Metric.MAE, Metric.RMSE, Metric.R2)
+CLASSIFICATION_METRIC_POINTS = (Metric.ACCURACY, Metric.PRECISION, Metric.RECALL, Metric.F1)
 
 def bar_chart_data(model_metrics: dict, task_type: str, metric: Metric)->tuple[bool, float, float, float]:
     match metric:
@@ -56,8 +62,6 @@ def calculate_generalization_gap(model_metrics: dict, task_type: str, metric: Me
     return train, cv, gap
 
 def calculate_all_generalization_gap(model_metrics: dict, task_type: str) -> dict:
-    regression_metric_points = [Metric.MAE, Metric.RMSE, Metric.R2]
-    classification_metric_points = [Metric.ACCURACY, Metric.PRECISION, Metric.RECALL, Metric.F1]
 
     generalization_dict = {
         Metric.LOSS.value: {
@@ -68,13 +72,13 @@ def calculate_all_generalization_gap(model_metrics: dict, task_type: str) -> dic
     }
 
     if task_type == TaskType.REGRESSION.value:
-        for metric_point in regression_metric_points:
+        for metric_point in REGRESSION_METRIC_POINTS:
             train, cv, gap = calculate_generalization_gap(model_metrics, task_type, metric_point)
 
             generalization_dict.update({metric_point.value: {"train": train, "cv": cv, "gap": gap}})
 
     elif task_type == TaskType.BINARY_CLASSIFICATION.value or task_type == TaskType.MULTICLASS_CLASSIFICATION.value:
-        for metric_point in classification_metric_points:
+        for metric_point in CLASSIFICATION_METRIC_POINTS:
                 train, cv, gap = calculate_generalization_gap(model_metrics, task_type, metric_point)
                 generalization_dict.update({metric_point.value: {"train": train, "cv": cv, "gap": gap}})
 
@@ -450,3 +454,59 @@ def extract_feature_coefficients(model_path: str, preprocessor_path: str) -> Fea
         features.append(FeatureCoefficient(feature=feature_name, coefficient=float(coeff)))
 
     return FeatureCoefficientResponse(features=features)
+
+# ===============================================================================================
+# MASTER DASHBOARD
+# ===============================================================================================
+async def get_completed_runs(db: AsyncSession, project_id: int) -> list[models.TrainingRun]:
+    result = await db.execute(
+    select(models.TrainingRun)
+    .where(models.TrainingRun.project_id == project_id, models.TrainingRun.status == TrainingStatus.COMPLETED.value)
+)
+    completed_runs = list(result.scalars().all())
+    return completed_runs
+
+async def build_leaderboard(task_type: str, project_id: int,  db: AsyncSession, sort_by: Metric) -> LeaderBoardResponse:
+    if (task_type == TaskType.REGRESSION.value and sort_by in CLASSIFICATION_METRIC_POINTS) or ((task_type == TaskType.BINARY_CLASSIFICATION.value or task_type == TaskType.MULTICLASS_CLASSIFICATION.value) and sort_by in REGRESSION_METRIC_POINTS):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The sorting metric isn't compatible with the task type")
+
+    completed_runs = await get_completed_runs(db, project_id)
+
+    if not completed_runs:
+        return LeaderBoardResponse(entries=[])
+
+    is_higher_better = IS_HIGHER_BETTER_MAP[sort_by]
+
+    raw_leaderboard = []
+
+    for training_run in completed_runs:
+        if training_run.metrics is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for the run haven't been evaluated yet")
+        if training_run.training_time_seconds is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="training time for this run hasn't been evaluated yet")
+
+        metrics = training_run.metrics
+
+
+        if task_type == TaskType.REGRESSION.value:
+            myMetrics = RegressionMetrics(**metrics)
+        elif task_type == TaskType.BINARY_CLASSIFICATION.value or task_type == TaskType.MULTICLASS_CLASSIFICATION.value:
+            myMetrics = ClassificationMetrics(**metrics)
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'Task of task type - {task_type} is invalid')
+        
+        raw_leaderboard.append(
+            LeaderBoardEntry(
+                run_id = training_run.id,
+                algorithm=training_run.algorithm,
+                hyperparameters=training_run.hyperparameters,
+                metrics=myMetrics,
+                training_time_seconds=training_run.training_time_seconds
+            )
+        )
+
+    sorted_leaderboard = sorted(raw_leaderboard, key = lambda entry: getattr(entry.metrics, f'test_{sort_by.value}'), reverse = is_higher_better)
+    
+    return LeaderBoardResponse(entries=sorted_leaderboard)
+
+
