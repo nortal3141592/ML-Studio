@@ -14,6 +14,7 @@ from utils.background_task_utils import execute_training_job
 from starlette.concurrency import run_in_threadpool
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form, BackgroundTasks
+from fastapi.responses import FileResponse
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -25,6 +26,7 @@ from auth import CurrentUser, CurrentProject
 from schemas import *
 
 from pathlib import Path
+from shutil import rmtree
 
 
 router = APIRouter()
@@ -349,3 +351,81 @@ async def get_training_run_status(run_id: int, current_project: CurrentProject, 
         )
 
     return training_run
+
+@router.get("/{project_id}/download/preprocessor")
+async def download_preprocessor(current_project: CurrentProject):
+    if current_project.preprocessor_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preprocessor not found, data needs to be engineered first")
+
+    path = Path(current_project.preprocessor_path)
+
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preprocessor file is missing on disk")
+
+    filename = f"{current_project.project_name}_preprocessor.joblib"
+
+    return FileResponse(path = path, filename = filename, media_type="application/octet-stream")
+
+@router.get("/{project_id}/runs/{run_id}/download/model")
+async def download_model(current_project: CurrentProject, run_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(select(models.TrainingRun).where(models.TrainingRun.id == run_id, models.TrainingRun.project_id == current_project.id))
+    training_run = result.scalars().first()
+
+    if not training_run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
+
+    if training_run.model_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model hasn't been trained yet")
+
+    path = Path(training_run.model_path)
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model file is missing on disk")
+
+    # handles both .joblib and .keras
+    extension = path.suffix 
+    filename = f"{current_project.project_name}_{training_run.algorithm}_run{training_run.id}{extension}"
+
+    return FileResponse(path=path, filename=filename, media_type="application/octet-stream")
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(current_project: CurrentProject, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.TrainingRun)
+        .where(models.TrainingRun.project_id == current_project.id, models.TrainingRun.status.in_(ACTIVE_TRAINING_STATUSES))
+    )
+
+    active_run = result.scalars().first()
+
+    if active_run:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="cannot delete a project while one or more training runs are in progress")
+
+    await db.delete(current_project)
+    await db.commit()
+
+    project_dir = Path(f"uploads/project_{current_project.id}")
+
+    if project_dir.exists():
+        await run_in_threadpool(rmtree, project_dir)
+
+@router.delete("/{project_id}/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_run(current_project: CurrentProject, run_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(select(models.TrainingRun).where(models.TrainingRun.id == run_id, models.TrainingRun.project_id == current_project.id))
+    training_run = result.scalars().first()
+    
+    if not training_run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The training run that you requested cannot be found or does not exist")
+
+    if training_run.status in ACTIVE_TRAINING_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete a training run that is currently in progress")
+
+    await db.delete(training_run)
+    await db.commit()
+
+    run_dir = Path(f"uploads/project_{current_project.id}/runs/run_{training_run.id}")
+
+    if run_dir.exists():
+        await run_in_threadpool(rmtree, run_dir)
+
+
+    
