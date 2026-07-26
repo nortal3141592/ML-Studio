@@ -567,7 +567,7 @@ async def build_generalization_comparison(task_type: str, metric: Metric, projec
 
         metrics = training_run.metrics
 
-        _, _, gap = calculate_generalization_gap(metrics, task_type)
+        _, _, gap = calculate_generalization_gap(metrics, task_type, metric)
 
         raw_data.append(
             MultiModelComparisonEntry(
