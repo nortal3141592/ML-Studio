@@ -10,9 +10,9 @@ from starlette.concurrency import run_in_threadpool
 from auth import CurrentProject
 import models
 from utils.enum_utils import Metric, TaskType
-from utils.evaluation_utils import bar_chart_data, calculate_generalization_gap, calculate_all_generalization_gap, generate_insights, load_loss_curve, extract_feature_importance, extract_feature_coefficients, build_leaderboard, build_metric_comparison, build_generalization_comparison
+from utils.evaluation_utils import bar_chart_data, calculate_generalization_gap, calculate_all_generalization_gap, generate_insights, load_loss_curve, extract_feature_importance, extract_feature_coefficients, build_leaderboard, build_metric_comparison, build_generalization_comparison, build_loss_comparison, build_loss_curve_comparison
 
-from schemas import ClassificationMetrics, RegressionMetrics, MetricComparisonResponse, GeneralizationGapResponse, InsightResponse, LossCurveResponse, FeatureImportanceResponse, FeatureCoefficientResponse, LeaderBoardResponse, MultiModelComparisonResponse
+from schemas import ClassificationMetrics, RegressionMetrics, MetricComparisonResponse, GeneralizationGapResponse, InsightResponse, LossCurveResponse, FeatureImportanceResponse, FeatureCoefficientResponse, LeaderBoardResponse, MultiModelComparisonResponse, MultiRunLossResponse, MultiRunLossCurveResponse
 
 router = APIRouter()
 
@@ -197,3 +197,11 @@ async def get_multi_model_generalization_gap(current_project: CurrentProject, me
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="the task type for this project hasn't been determined yet")
 
     return await build_generalization_comparison(current_project.task_type, metric, current_project.id, db)
+
+@router.get("/{project_id}/dashboard/loss-comparison", response_model=MultiRunLossResponse)
+async def get_loss_comparison(current_project: CurrentProject, db: DBSession):
+    return await build_loss_comparison(current_project.id, db)
+
+@router.get("/{project_id}/dashboard/loss-curve-comparison", response_model=MultiRunLossCurveResponse)
+async def get_loss_curve_comparison(current_project: CurrentProject, db: DBSession):
+    return await build_loss_curve_comparison(current_project.id, db)

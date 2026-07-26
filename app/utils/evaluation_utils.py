@@ -1,11 +1,12 @@
 from utils.enum_utils import Metric, TaskType, Algorithm, TrainingStatus
 import models
 from fastapi import HTTPException, status
-from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse, LeaderBoardEntry, LeaderBoardResponse, MultiModelComparisonEntry, MultiModelComparisonResponse
+from schemas import InsightResponse, RegressionMetrics, ClassificationMetrics, LossCurveResponse, FeatureImportance, FeatureImportanceResponse, FeatureCoefficient, FeatureCoefficientResponse, LeaderBoardEntry, LeaderBoardResponse, MultiModelComparisonEntry, MultiModelComparisonResponse, MultiRunLossEntry, MultiRunLossResponse, MultiRunLossCurveResponse, RunLossCurve
 import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from starlette.concurrency import run_in_threadpool
 
 from pathlib import Path
 import joblib
@@ -525,9 +526,6 @@ async def build_metric_comparison(task_type: str, project_id: int, metric: Metri
     for training_run in completed_runs:
         if training_run.metrics is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for the run haven't been evaluated yet")
-        if training_run.training_time_seconds is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="training time for this run hasn't been evaluated yet")
-
         metrics = training_run.metrics
 
         raw_data.append(
@@ -554,7 +552,7 @@ async def build_generalization_comparison(task_type: str, metric: Metric, projec
     completed_runs = await get_completed_runs(db, project_id)
 
     if not completed_runs:
-        return MultiModelComparisonResponse(metric=metric+"_gap", higher_is_better=is_higher_better, entries = [])
+        return MultiModelComparisonResponse(metric=metric.value+"_gap", higher_is_better=is_higher_better, entries = [])
 
     raw_data = []
 
@@ -562,8 +560,6 @@ async def build_generalization_comparison(task_type: str, metric: Metric, projec
     for training_run in completed_runs:
         if training_run.metrics is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for the run haven't been evaluated yet")
-        if training_run.training_time_seconds is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="training time for this run hasn't been evaluated yet")
 
         metrics = training_run.metrics
 
@@ -584,6 +580,55 @@ async def build_generalization_comparison(task_type: str, metric: Metric, projec
             entries=raw_data
         )
 
-    
-    
+async def build_loss_comparison(project_id: int, db: AsyncSession) -> MultiRunLossResponse:
+    completed_runs = await get_completed_runs(db, project_id)
 
+    if not completed_runs:
+        return MultiRunLossResponse(entries=[])
+
+    entries = []
+    for training_run in completed_runs:
+        if training_run.metrics is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for this run haven't been evaluated yet")
+
+        metrics = training_run.metrics
+        entries.append(
+            MultiRunLossEntry(
+                run_id=training_run.id,
+                algorithm=training_run.algorithm,
+                hyperparameters=training_run.hyperparameters,
+                train_loss=metrics["train_loss"],
+                cv_loss=metrics["cv_loss"],
+                test_loss=metrics["test_loss"],
+            )
+        )
+
+    return MultiRunLossResponse(entries=entries)
+
+async def build_loss_curve_comparison(project_id: int, db: AsyncSession) -> MultiRunLossCurveResponse:
+    completed_runs = await get_completed_runs(db, project_id)
+
+    nn_runs = [r for r in completed_runs if r.algorithm == Algorithm.NEURAL_NETWORK.value]
+
+    if not nn_runs:
+        return MultiRunLossCurveResponse(curves=[])
+
+    curves = []
+    for training_run in nn_runs:
+        if training_run.history_path is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The history for this neural network run is missing")
+
+        curve_data = await run_in_threadpool(load_loss_curve, training_run.algorithm, training_run.history_path)
+
+        curves.append(
+            RunLossCurve(
+                run_id=training_run.id,
+                algorithm=training_run.algorithm,
+                hyperparameters=training_run.hyperparameters,
+                epochs=curve_data.epochs,
+                train_loss=curve_data.train_loss,
+                cv_loss=curve_data.cv_loss,
+            )
+        )
+
+    return MultiRunLossCurveResponse(curves=curves)

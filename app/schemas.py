@@ -503,3 +503,22 @@ class MultiModelComparisonResponse(BaseModel):
     metric: str
     higher_is_better: bool
     entries: list[MultiModelComparisonEntry]
+
+class MultiRunLossEntry(RunSummary):
+    train_loss: float
+    cv_loss: float
+    test_loss: float
+
+class MultiRunLossResponse(BaseModel):
+    entries: list[MultiRunLossEntry]
+
+class RunLossCurve(BaseModel):
+    run_id: int
+    algorithm: str
+    hyperparameters: dict[str, Any]
+    epochs: list[int]
+    train_loss: list[float]
+    cv_loss: list[float]
+
+class MultiRunLossCurveResponse(BaseModel):
+    curves: list[RunLossCurve]
