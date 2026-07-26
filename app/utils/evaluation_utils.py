@@ -545,5 +545,45 @@ async def build_metric_comparison(task_type: str, project_id: int, metric: Metri
         entries=raw_data
     )
 
+async def build_generalization_comparison(task_type: str, metric: Metric, project_id: int, db: AsyncSession):
+    if (task_type == TaskType.REGRESSION.value and metric in CLASSIFICATION_METRIC_POINTS) or ((task_type == TaskType.BINARY_CLASSIFICATION.value or task_type == TaskType.MULTICLASS_CLASSIFICATION.value) and metric in REGRESSION_METRIC_POINTS):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The sorting metric isn't compatible with the task type")
+
+    is_higher_better = IS_HIGHER_BETTER_MAP[metric]
+
+    completed_runs = await get_completed_runs(db, project_id)
+
+    if not completed_runs:
+        return MultiModelComparisonResponse(metric=metric+"_gap", higher_is_better=is_higher_better, entries = [])
+
+    raw_data = []
+
+
+    for training_run in completed_runs:
+        if training_run.metrics is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metrics for the run haven't been evaluated yet")
+        if training_run.training_time_seconds is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="training time for this run hasn't been evaluated yet")
+
+        metrics = training_run.metrics
+
+        _, _, gap = calculate_generalization_gap(metrics, task_type)
+
+        raw_data.append(
+            MultiModelComparisonEntry(
+                run_id=training_run.id,
+                algorithm=training_run.algorithm,
+                hyperparameters=training_run.hyperparameters,
+                value = gap
+            )
+        )
+
+    return MultiModelComparisonResponse(
+            metric = metric.value + "_gap",
+            higher_is_better=is_higher_better,
+            entries=raw_data
+        )
+
+    
     
 
