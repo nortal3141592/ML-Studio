@@ -1,5 +1,7 @@
 from typing import Annotated
 from datetime import timedelta, datetime, UTC
+import secrets
+import hashlib
 
 from pwdlib import PasswordHash
 from fastapi.security import OAuth2PasswordBearer
@@ -22,6 +24,12 @@ def hash_password(plain_password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return hasher.verify(plain_password, hashed_password)
+
+def generate_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 def create_access_token(data: dict, expires_delta: timedelta) -> str:
     to_encode = data.copy()

@@ -21,5 +21,17 @@ class Settings(BaseSettings):
 
     classification_unique_threshold: int = 20
 
+    reset_token_expire_minutes: int = 60
+
+    # mail stuff
+    mail_server: str = "localhost"
+    mail_port: int = 2525
+    mail_username: str = ""
+    mail_password: SecretStr = SecretStr("")
+    mail_from: str = "noreply@example.com"
+    mail_use_tls: bool = True
+
+    frontend_url: str = "http://localhost:8000"
+
 
 settings = Settings() # pyright: ignore
