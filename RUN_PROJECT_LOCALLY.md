@@ -1,4 +1,4 @@
-# 🚀 Running ML Studio Locally
+#  Running ML Studio Locally
 
 Follow the steps below to get **ML Studio** running on your own machine.
 
