@@ -69,6 +69,10 @@ npm run dev
 
 Frontend runs at `http://localhost:5173`.
 
+**Want to run **ML Studio** on your own machine?**
+
+📖 Follow the complete step-by-step setup guide in **[`RUN_PROJECT_LOCALLY.md`](RUN_PROJECT_LOCALLY.md)**. It covers everything from cloning the repository and configuring environment variables to starting both the FastAPI backend and the React/Vite frontend.
+
 ---
 
 ## Design philosophy and honest limitations
