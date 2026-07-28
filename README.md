@@ -19,7 +19,7 @@ Upload a CSV, and ML Studio walks you through:
 5. **Evaluate** — per-run metrics, charts, and plain-language insights, plus a project-wide dashboard comparing every run
 6. **Download** — trained model, preprocessor, and metrics, individually or bundled as a zip
 
-![alt text](readme-assets/image.png)
+![alt text](readme-assets/image-6.png)
 
 ---
 
