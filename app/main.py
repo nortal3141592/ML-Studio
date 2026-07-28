@@ -19,3 +19,13 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(evaluation.router, prefix="/api/projects", tags = ["Evaluation"])
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

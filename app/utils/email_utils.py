@@ -28,7 +28,7 @@ async def send_email(to_email: str, subject: str, plaintext: str, html_content: 
     )
 
 async def send_password_reset_email(to_email: str, username: str, token: str) -> None:
-    reset_url = f"{settings.frontend_url}/reset-password?token={token}"
+    reset_url = f"http://localhost:5173/reset-password?token={token}"
 
     # template = templates.get_template("email/password_reset.html")
 
@@ -45,7 +45,7 @@ This link will expire in 1 Hour
 If you didn't request this, you can safely ignore this email
 
 Best regards,
-The FastAPI Blog team
+The ML Studio Team
 """
     
     await send_email(to_email=to_email, subject="Password request link", plaintext=plain_text)

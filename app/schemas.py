@@ -57,6 +57,8 @@ class ProjectPublic(BaseModel):
     project_name: str
     status: str
 
+    task_type: str | None = None
+
     raw_dataset_path: str
 
     created_at: datetime
@@ -113,7 +115,7 @@ class FeatureEngineeringResponse(BaseModel):
     encoded_columns: list[str]
 
     feature_names_after_encoding: list[str]
-    number_of_features_after_encoding: int\
+    number_of_features_after_encoding: int
     
 # MODEL TRAINING SCHEMAS
 
@@ -418,7 +420,10 @@ class TrainingRunStatusResponse(BaseModel):
 
     id: int
     project_id: int
+
     algorithm: str
+    hyperparameters: dict[str, Any]
+    random_seed: int
 
     status: str
     progress: int
@@ -426,7 +431,6 @@ class TrainingRunStatusResponse(BaseModel):
 
     model_path: str | None
     history_path: str | None
-    
     metrics: dict[str, Any] | None
     training_time_seconds: float | None
     

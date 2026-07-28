@@ -12,3 +12,6 @@ wheels/
 .env
 .parquet
 *.db
+
+app/uploads
+app/media

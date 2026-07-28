@@ -87,10 +87,32 @@ async def upload_project(name: Annotated[str, Form()] ,current_user: CurrentUser
         await db.rollback()
         raise
 
+@router.get("/{project_id}", response_model=ProjectPublic)
+async def get_project_details(current_project: CurrentProject, db: Annotated[AsyncSession, Depends(get_db)]):
+    return current_project
+
+@router.get("", response_model=list[ProjectPublic])
+async def get_projects(current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.Project)
+        .where(models.Project.user_id == current_user.id)
+        .order_by(models.Project.updated_at.desc())
+    )
+    return list(result.scalars().all())
+
+@router.get("/{project_id}/runs", response_model=list[TrainingRunStatusResponse])
+async def get_project_runs(current_project: CurrentProject, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.TrainingRun)
+        .where(models.TrainingRun.project_id == current_project.id)
+        .order_by(models.TrainingRun.created_at.desc())
+    )
+    return list(result.scalars().all())
+
 # ========================================
 # GET api/projects/{id}/preview/{stage}
 # ========================================
-@router.get("/{project_id}/preview/{stage}", response_model=MetadataResponse)
+@router.get("/{project_id}/preview/{stage}", response_model=MetadataResponse | FeatureEngineeringResponse)
 async def get_project_metadata(current_project: CurrentProject, stage: DatasetStage):
     metadata_map = {
         DatasetStage.RAW: current_project.raw_metadata,
